@@ -3,7 +3,7 @@ exchanges the code, upserts the streamer, and spawns their live session.
 """
 import logging
 import time
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 import aiohttp
 from fastapi import APIRouter, HTTPException, Request
@@ -29,17 +29,16 @@ router = APIRouter(prefix=ROOT_PATH)
 templates = Jinja2Templates(directory="templates")
 
 
+def _render(request: Request, template: str, context: dict, status_code: int = 200):
+    """Starlette 1.0 TemplateResponse: request is first arg, context is separate."""
+    return templates.TemplateResponse(
+        request, template, context | {"root_path": ROOT_PATH}, status_code=status_code
+    )
+
+
 @router.get("/")
 async def root(request: Request) -> HTMLResponse:
-    """Landing page — links to /install."""
-    return templates.TemplateResponse(
-        "landing.html",
-        {
-            "request": request,
-            "install_url": f"{ROOT_PATH}/install",
-            "root_path": ROOT_PATH,
-        },
-    )
+    return _render(request, "landing.html", {"install_url": f"{ROOT_PATH}/install"})
 
 
 @router.get("/install")
@@ -64,14 +63,9 @@ async def callback(request: Request) -> RedirectResponse:
 
     if error:
         log.warning("oauth callback error: %s", error)
-        return templates.TemplateResponse(
-            "error.html",
-            {
-                "request": request,
-                "title": "Install cancelled",
-                "message": f"JoystickTV returned: {error}",
-                "root_path": ROOT_PATH,
-            },
+        return _render(
+            request, "error.html",
+            {"title": "Install cancelled", "message": f"JoystickTV returned: {error}"},
             status_code=400,
         )
     if not code:
@@ -87,14 +81,9 @@ async def callback(request: Request) -> RedirectResponse:
         token_data = await _exchange_code(code)
     except Exception as e:
         log.exception("token exchange failed")
-        return templates.TemplateResponse(
-            "error.html",
-            {
-                "request": request,
-                "title": "Install failed",
-                "message": f"Token exchange failed: {e}",
-                "root_path": ROOT_PATH,
-            },
+        return _render(
+            request, "error.html",
+            {"title": "Install failed", "message": f"Token exchange failed: {e}"},
             status_code=502,
         )
 
@@ -102,14 +91,9 @@ async def callback(request: Request) -> RedirectResponse:
         me = await _fetch_identity(token_data["access_token"])
     except Exception as e:
         log.exception("identity fetch failed")
-        return templates.TemplateResponse(
-            "error.html",
-            {
-                "request": request,
-                "title": "Install failed",
-                "message": f"Could not read your JTV account: {e}",
-                "root_path": ROOT_PATH,
-            },
+        return _render(
+            request, "error.html",
+            {"title": "Install failed", "message": f"Could not read your JTV account: {e}"},
             status_code=502,
         )
 
@@ -155,9 +139,8 @@ async def _exchange_code(code: str) -> dict:
 
 
 async def _fetch_identity(access_token: str) -> dict:
-    """Look up who this token belongs to. JTV's exact /me route isn't spelled
-    out in the brief we have — try the conventional endpoints in order and use
-    whichever returns 200."""
+    """Try conventional /me endpoints in order — JTV's exact route isn't
+    documented in the brief. First 200 wins."""
     candidates = [
         f"{JTV_API_BASE}/users/me",
         f"{JTV_API_BASE}/me",

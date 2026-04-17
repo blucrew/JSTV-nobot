@@ -39,9 +39,9 @@ async def panel_page(slug: str, request: Request) -> HTMLResponse:
     welcome = request.query_params.get("welcome") == "1"
 
     return templates.TemplateResponse(
+        request,
         "panel.html",
         {
-            "request": request,
             "streamer_username": streamer.jtv_username,
             "panel_slug": streamer.panel_slug,
             "panel_token": streamer.panel_token,
