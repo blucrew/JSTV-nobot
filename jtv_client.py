@@ -121,6 +121,7 @@ class JtvClient:
             async with websockets.connect(
                 url,
                 ssl=_SSL,
+                subprotocols=["actioncable-v1-json"],
                 open_timeout=20,
                 ping_interval=25,
                 ping_timeout=20,
