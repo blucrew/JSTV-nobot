@@ -28,16 +28,28 @@ from jtv_client import JtvClient
 log = logging.getLogger(__name__)
 
 
+def _parse_expiry(expires_in) -> int:
+    now = int(time.time())
+    try:
+        v = int(expires_in)
+    except (TypeError, ValueError):
+        return now + 3600
+    return v if v > 1_000_000_000 else now + v
+
+
 async def refresh_tokens(streamer: db.Streamer) -> None:
     """Exchange refresh_token for a fresh access_token. Persists to DB."""
-    payload = {
+    params = {
         "grant_type": "refresh_token",
         "refresh_token": streamer.refresh_token,
-        "client_id": JOYSTICK_BOT_ID,
-        "client_secret": JOYSTICK_BOT_SECRET,
     }
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+    }
+    auth = aiohttp.BasicAuth(JOYSTICK_BOT_ID, JOYSTICK_BOT_SECRET)
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
-        async with s.post(JTV_TOKEN_URL, data=payload) as r:
+        async with s.post(JTV_TOKEN_URL, params=params, headers=headers, auth=auth) as r:
             body = await r.text()
             if r.status != 200:
                 raise RuntimeError(
@@ -46,9 +58,8 @@ async def refresh_tokens(streamer: db.Streamer) -> None:
             tok = await r.json(content_type=None)
     access = tok["access_token"]
     refresh = tok.get("refresh_token", streamer.refresh_token)
-    expires_in = int(tok.get("expires_in", 3600))
     db.update_tokens(
-        streamer.id, access, refresh, int(time.time()) + expires_in
+        streamer.id, access, refresh, _parse_expiry(tok.get("expires_in"))
     )
     log.info("[%s] tokens refreshed", streamer.jtv_username)
 

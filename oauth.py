@@ -108,7 +108,7 @@ async def callback(request: Request) -> RedirectResponse:
         channel_id=str(me.get("channel_id") or me.get("channel") or "") or None,
         access_token=token_data["access_token"],
         refresh_token=token_data.get("refresh_token", ""),
-        token_expires_at=int(time.time()) + int(token_data.get("expires_in", 3600)),
+        token_expires_at=_parse_expiry(token_data.get("expires_in")),
     )
 
     supervisor = request.app.state.supervisor
@@ -121,17 +121,34 @@ async def callback(request: Request) -> RedirectResponse:
     )
 
 
+def _parse_expiry(expires_in) -> int:
+    """JTV returns expires_in as an absolute Unix timestamp, not seconds.
+    Guard against either format defensively."""
+    now = int(time.time())
+    try:
+        v = int(expires_in)
+    except (TypeError, ValueError):
+        return now + 3600
+    # If the value is plausibly a future timestamp (> year 2020), use directly.
+    return v if v > 1_000_000_000 else now + v
+
+
 async def _exchange_code(code: str) -> dict:
-    payload = {
+    # JTV token exchange: Basic Auth header, params as query string (not body).
+    # ref: https://support.joystick.tv/developer_support/#fetching-access_token-api
+    params = {
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": OAUTH_REDIRECT_URI,
-        "client_id": JOYSTICK_BOT_ID,
-        "client_secret": JOYSTICK_BOT_SECRET,
     }
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+    }
+    auth = aiohttp.BasicAuth(JOYSTICK_BOT_ID, JOYSTICK_BOT_SECRET)
     timeout = aiohttp.ClientTimeout(total=20)
     async with aiohttp.ClientSession(timeout=timeout) as s:
-        async with s.post(JTV_TOKEN_URL, data=payload) as r:
+        async with s.post(JTV_TOKEN_URL, params=params, headers=headers, auth=auth) as r:
             body = await r.text()
             if r.status != 200:
                 raise RuntimeError(f"{r.status}: {body[:200]}")
