@@ -74,10 +74,14 @@ async def callback(request: Request) -> RedirectResponse:
             },
             status_code=400,
         )
-    if not code or not state:
-        raise HTTPException(400, "missing code or state")
-    if not db.consume_oauth_state(state):
-        raise HTTPException(400, "invalid or expired state")
+    if not code:
+        raise HTTPException(400, "missing code")
+    # State is CSRF protection for our own /install flow. JTV's marketplace
+    # install bypasses our /install page and sends state="" — skip validation
+    # in that case rather than rejecting legitimate marketplace installs.
+    if state:
+        if not db.consume_oauth_state(state):
+            raise HTTPException(400, "invalid or expired state")
 
     try:
         token_data = await _exchange_code(code)
