@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS streamers (
     panel_slug TEXT UNIQUE NOT NULL,
     panel_token TEXT NOT NULL,
     installed_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    mods_enabled INTEGER NOT NULL DEFAULT 1,
+    auto_reset_on_live INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS oauth_states (
@@ -48,6 +50,8 @@ class Streamer:
     panel_token: str
     installed_at: int
     updated_at: int
+    mods_enabled: bool = True
+    auto_reset_on_live: bool = True
 
 
 def _row_to_streamer(row: sqlite3.Row) -> Streamer:
@@ -63,6 +67,8 @@ def _row_to_streamer(row: sqlite3.Row) -> Streamer:
         panel_token=row["panel_token"],
         installed_at=row["installed_at"],
         updated_at=row["updated_at"],
+        mods_enabled=bool(row["mods_enabled"]),
+        auto_reset_on_live=bool(row["auto_reset_on_live"]),
     )
 
 
@@ -81,6 +87,14 @@ def connect() -> Iterator[sqlite3.Connection]:
 def init() -> None:
     with connect() as c:
         c.executescript(SCHEMA)
+        # Migrate existing DBs that lack the new columns
+        for col, default in (("mods_enabled", "1"), ("auto_reset_on_live", "1")):
+            try:
+                c.execute(
+                    f"ALTER TABLE streamers ADD COLUMN {col} INTEGER NOT NULL DEFAULT {default}"
+                )
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
 
 def new_slug() -> str:
@@ -196,6 +210,15 @@ def update_tokens(
             """UPDATE streamers SET access_token=?, refresh_token=?,
                token_expires_at=?, updated_at=? WHERE id=?""",
             (access_token, refresh_token, token_expires_at, now, streamer_id),
+        )
+
+
+def update_settings(streamer_id: int, *, mods_enabled: bool, auto_reset_on_live: bool) -> None:
+    now = int(time.time())
+    with connect() as c:
+        c.execute(
+            "UPDATE streamers SET mods_enabled=?, auto_reset_on_live=?, updated_at=? WHERE id=?",
+            (int(mods_enabled), int(auto_reset_on_live), now, streamer_id),
         )
 
 

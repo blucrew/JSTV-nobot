@@ -12,6 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 import db
 from config import ROOT_PATH, panel_url
@@ -49,6 +50,8 @@ async def panel_page(slug: str, request: Request) -> HTMLResponse:
             "fire_path": f"{ROOT_PATH}/panel/{streamer.panel_slug}/fire",
             "welcome": welcome,
             "root_path": ROOT_PATH,
+            "mods_enabled": streamer.mods_enabled,
+            "auto_reset_on_live": streamer.auto_reset_on_live,
         },
     )
 
@@ -73,6 +76,24 @@ async def panel_fire(slug: str, request: Request) -> JSONResponse:
             raise HTTPException(503, "bot is not running for this streamer")
 
     await session.fire_no()
+    return JSONResponse({"ok": True})
+
+
+class SettingsBody(BaseModel):
+    mods_enabled: bool
+    auto_reset_on_live: bool
+
+
+@router.post("/panel/{slug}/settings")
+async def panel_settings(slug: str, request: Request, body: SettingsBody) -> JSONResponse:
+    """Persist mods_enabled and auto_reset_on_live for this streamer."""
+    k = request.query_params.get("k")
+    streamer = _authorize(slug, k)
+    db.update_settings(
+        streamer.id,
+        mods_enabled=body.mods_enabled,
+        auto_reset_on_live=body.auto_reset_on_live,
+    )
     return JSONResponse({"ok": True})
 
 

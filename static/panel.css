@@ -154,6 +154,74 @@ a { color: #ff8a8a; }
 .instructions ul, .instructions ol { padding-left: 1.25rem; }
 .instructions li { margin: 0.3rem 0; }
 
+/* --- SETTINGS TOGGLES -------------------------------------------------- */
+
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+
+.toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+}
+.toggle-label strong { font-size: 0.95rem; }
+.toggle-label small  { color: var(--muted); font-size: 0.82rem; }
+
+/* Custom checkbox styled as a pill toggle */
+input[type="checkbox"][role="switch"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: #333340;
+  border: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+input[type="checkbox"][role="switch"]::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 150ms ease, background 150ms ease;
+}
+input[type="checkbox"][role="switch"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+input[type="checkbox"][role="switch"]:checked::before {
+  transform: translateX(20px);
+  background: #fff;
+}
+input[type="checkbox"][role="switch"]:focus-visible {
+  outline: 2px solid #ffb0b0;
+  outline-offset: 2px;
+}
+
 /* Compact layout when used as an OBS dock / small browser source */
 @media (max-width: 420px), (max-height: 480px) {
   main { padding: 1rem 0.75rem 2rem; }

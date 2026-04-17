@@ -195,19 +195,24 @@ class StreamerSession:
             return True
         if username and username == self.streamer.jtv_username.lower():
             return True
-        if sender.get("is_streamer") or sender.get("is_moderator"):
+        if sender.get("is_streamer") or data.get("is_streamer"):
             return True
-        if data.get("is_streamer") or data.get("is_moderator"):
+
+        # Moderator checks — only if the streamer has mods enabled
+        if not self.streamer.mods_enabled:
+            return False
+
+        if sender.get("is_moderator") or data.get("is_moderator"):
             return True
 
         roles = sender.get("roles") or data.get("roles")
         if isinstance(roles, list):
             for r in roles:
-                if str(r).lower() in ("streamer", "moderator", "mod", "owner"):
+                if str(r).lower() in ("moderator", "mod"):
                     return True
 
         role = str(sender.get("role") or data.get("role") or "").lower()
-        if role in ("streamer", "moderator", "mod", "owner"):
+        if role in ("moderator", "mod"):
             return True
         return False
 
@@ -282,9 +287,8 @@ class StreamerSession:
             or data.get("live")
             or data.get("online")
         )
-        # Flip enabled→True on offline→live transition (per spec: "state resets
-        # to on every time the stream goes live").
-        if self.last_is_live is False and is_live:
+        # Flip enabled→True on offline→live transition (unless streamer disabled it).
+        if self.last_is_live is False and is_live and self.streamer.auto_reset_on_live:
             log.info("[%s] stream went live → resetting noBot to ON",
                      self.streamer.jtv_username)
             self.nobot_enabled = True

@@ -14,19 +14,23 @@ import contextlib
 import json
 import logging
 import random
+import ssl
 from typing import Any, Awaitable, Callable, Optional
 
-import aiohttp
-
 import base64
+import websockets
+import websockets.exceptions
 
-from config import JOYSTICK_BOT_ID, JOYSTICK_BOT_SECRET, JTV_WS_URL, RECONNECT_MIN, RECONNECT_MAX
+from config import JOYSTICK_APP_ID, JOYSTICK_BOT_SECRET, JTV_WS_URL, RECONNECT_MIN, RECONNECT_MAX
 
-# WS auth is Basic Auth (bot credentials), NOT the per-streamer OAuth token.
-# Learned from emojibuddy: base64(bot_id:bot_secret) as the ?token= param.
-_WS_TOKEN = base64.b64encode(f"{JOYSTICK_BOT_ID}:{JOYSTICK_BOT_SECRET}".encode()).decode()
+# WS auth uses Application ID (not OAuth Client ID) + shared secret, Basic Auth encoded.
+_WS_TOKEN = base64.b64encode(f"{JOYSTICK_APP_ID}:{JOYSTICK_BOT_SECRET}".encode()).decode()
+
+# Explicit SSL context matching emojibuddy's proven approach.
+_SSL = ssl.create_default_context()
 
 log = logging.getLogger(__name__)
+
 
 class AuthError(Exception):
     """Raised when the server signals that our token is invalid."""
@@ -35,8 +39,7 @@ class AuthError(Exception):
 def _make_identifier(channel_id: str) -> str:
     """Build the ActionCable subscription identifier string for a channel.
     Must be compact JSON with no extra whitespace — ActionCable compares
-    identifiers as raw strings on the server side.
-    Learned from emojibuddy: channel_id must be included in the identifier."""
+    identifiers as raw strings on the server side."""
     return json.dumps({"channel": "GatewayChannel", "id": str(channel_id)}, separators=(",", ":"))
 
 
@@ -48,8 +51,6 @@ class JtvClient:
       * Perform the ActionCable handshake correctly every connect
       * Expose send_chat() / send_whisper() (queued; delivered after handshake)
       * Invoke on_event(event_name, data) for every received channel frame
-      * Invoke on_auth_fail() if we determine the token is bad, then await the
-        owner to refresh (via provided refresh_access_token coroutine)
     """
 
     def __init__(
@@ -64,7 +65,7 @@ class JtvClient:
         self._on_event = on_event
         self._out_queue: asyncio.Queue[dict] = asyncio.Queue()
         self._stopping = False
-        self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
+        self._ws: Optional[Any] = None
         self._subscribed = asyncio.Event()
 
     # --- public API ----------------------------------------------------------
@@ -75,10 +76,6 @@ class JtvClient:
         )
 
     async def send_whisper(self, target_user_id: str, text: str) -> None:
-        # NOTE: exact action name and field name for the target user ID are not
-        # documented in the brief. These are our best-guess defaults; verify
-        # against the echo endpoint (https://joystick.tv/echo) on first run and
-        # adjust here if needed.
         await self._out_queue.put(
             {
                 "action": "whisper",
@@ -89,7 +86,7 @@ class JtvClient:
 
     async def stop(self) -> None:
         self._stopping = True
-        if self._ws and not self._ws.closed:
+        if self._ws is not None:
             with contextlib.suppress(Exception):
                 await self._ws.close()
 
@@ -119,46 +116,56 @@ class JtvClient:
         url = f"{JTV_WS_URL}?token={_WS_TOKEN}"
         self._subscribed.clear()
 
-        timeout = aiohttp.ClientTimeout(total=None, sock_connect=20, sock_read=None)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            log.info("[%s] connecting", self.label)
-            try:
-                ws = await session.ws_connect(url, heartbeat=25, max_msg_size=4 * 1024 * 1024)
-            except aiohttp.WSServerHandshakeError as e:
-                raise
-
-            self._ws = ws
-            try:
-                await self._await_welcome(ws)
-                await ws.send_json(
-                    {"command": "subscribe", "identifier": self._identifier}
-                )
-                await self._await_confirm(ws)
-
-                log.info("[%s] subscribed; entering main loop", self.label)
-                self._subscribed.set()
-                sender_task = asyncio.create_task(self._sender_loop(ws))
+        log.info("[%s] connecting", self.label)
+        try:
+            async with websockets.connect(
+                url,
+                ssl=_SSL,
+                open_timeout=20,
+                ping_interval=25,
+                ping_timeout=20,
+                max_size=4 * 1024 * 1024,
+            ) as ws:
+                self._ws = ws
                 try:
-                    await self._receive_loop(ws)
-                finally:
-                    sender_task.cancel()
-                    with contextlib.suppress(Exception, asyncio.CancelledError):
-                        await sender_task
-            finally:
-                self._ws = None
-                self._subscribed.clear()
+                    await self._await_welcome(ws)
+                    await ws.send(
+                        json.dumps({"command": "subscribe", "identifier": self._identifier})
+                    )
+                    await self._await_confirm(ws)
 
-    async def _await_welcome(self, ws: aiohttp.ClientWebSocketResponse) -> None:
-        """Block until we see {'type':'welcome'}. Anything else before it is a
-        protocol violation — bail so the outer loop reconnects."""
+                    log.info("[%s] subscribed; entering main loop", self.label)
+                    self._subscribed.set()
+                    sender_task = asyncio.create_task(self._sender_loop(ws))
+                    try:
+                        await self._receive_loop(ws)
+                    finally:
+                        sender_task.cancel()
+                        with contextlib.suppress(Exception, asyncio.CancelledError):
+                            await sender_task
+                finally:
+                    self._ws = None
+                    self._subscribed.clear()
+        except websockets.exceptions.InvalidHandshake as e:
+            log.error("[%s] WS handshake rejected (HTTP-level): %s", self.label, e)
+            raise
+
+    # --- handshake helpers ---------------------------------------------------
+
+    async def _await_welcome(self, ws) -> None:
+        """Block until we see {'type':'welcome'}. ConnectionClosed before it → bail."""
         while True:
-            msg = await ws.receive()
-            if msg.type != aiohttp.WSMsgType.TEXT:
-                raise RuntimeError(
-                    f"[{self.label}] unexpected frame before welcome: {msg.type}"
-                )
             try:
-                frame = json.loads(msg.data)
+                data = await ws.recv()
+            except websockets.exceptions.ConnectionClosed as e:
+                reason = getattr(e, "reason", "") or str(e)
+                if any(w in str(reason).lower() for w in ("unauthorized", "invalid")):
+                    raise AuthError(reason)
+                raise RuntimeError(f"[{self.label}] closed before welcome: {e}")
+            if not isinstance(data, str):
+                continue
+            try:
+                frame = json.loads(data)
             except json.JSONDecodeError:
                 continue
             t = frame.get("type")
@@ -169,20 +176,21 @@ class JtvClient:
                 reason = frame.get("reason", "")
                 if reason in ("unauthorized", "invalid_request"):
                     raise AuthError(reason)
-                raise RuntimeError(f"disconnect before welcome: {reason}")
+                raise RuntimeError(f"[{self.label}] disconnect before welcome: {reason}")
             if t == "ping":
-                continue  # server heartbeats before welcome are harmless
+                continue
             log.debug("[%s] pre-welcome frame: %s", self.label, frame)
 
-    async def _await_confirm(self, ws: aiohttp.ClientWebSocketResponse) -> None:
+    async def _await_confirm(self, ws) -> None:
         while True:
-            msg = await ws.receive()
-            if msg.type != aiohttp.WSMsgType.TEXT:
-                raise RuntimeError(
-                    f"[{self.label}] unexpected frame before confirm: {msg.type}"
-                )
             try:
-                frame = json.loads(msg.data)
+                data = await ws.recv()
+            except websockets.exceptions.ConnectionClosed as e:
+                raise RuntimeError(f"[{self.label}] closed before confirm: {e}")
+            if not isinstance(data, str):
+                continue
+            try:
+                frame = json.loads(data)
             except json.JSONDecodeError:
                 continue
             t = frame.get("type")
@@ -190,33 +198,29 @@ class JtvClient:
                 log.debug("[%s] confirm_subscription", self.label)
                 return
             if t == "reject_subscription":
-                raise RuntimeError("subscription rejected")
+                raise RuntimeError(f"[{self.label}] subscription rejected")
             if t == "disconnect":
                 reason = frame.get("reason", "")
                 if reason in ("unauthorized", "invalid_request"):
                     raise AuthError(reason)
-                raise RuntimeError(f"disconnect before confirm: {reason}")
+                raise RuntimeError(f"[{self.label}] disconnect before confirm: {reason}")
             if t == "ping":
                 continue
             log.debug("[%s] pre-confirm frame: %s", self.label, frame)
 
-    async def _receive_loop(self, ws: aiohttp.ClientWebSocketResponse) -> None:
-        async for msg in ws:
-            if msg.type != aiohttp.WSMsgType.TEXT:
-                if msg.type in (
-                    aiohttp.WSMsgType.CLOSE,
-                    aiohttp.WSMsgType.CLOSED,
-                    aiohttp.WSMsgType.ERROR,
-                ):
-                    log.info("[%s] ws closed: %s", self.label, msg.type)
-                    return
-                continue
-            try:
-                frame = json.loads(msg.data)
-            except json.JSONDecodeError:
-                log.debug("[%s] non-JSON frame: %r", self.label, msg.data)
-                continue
-            await self._dispatch(frame)
+    async def _receive_loop(self, ws) -> None:
+        try:
+            async for data in ws:
+                if not isinstance(data, str):
+                    continue
+                try:
+                    frame = json.loads(data)
+                except json.JSONDecodeError:
+                    log.debug("[%s] non-JSON frame: %r", self.label, data)
+                    continue
+                await self._dispatch(frame)
+        except websockets.exceptions.ConnectionClosed as e:
+            log.info("[%s] ws closed: %s", self.label, e)
 
     async def _dispatch(self, frame: dict) -> None:
         t = frame.get("type")
@@ -227,16 +231,13 @@ class JtvClient:
             log.warning("[%s] server disconnect: %s", self.label, reason)
             if reason in ("unauthorized", "invalid_request"):
                 raise AuthError(reason)
-            # Close our ws so receive_loop exits and outer loop reconnects
-            if self._ws and not self._ws.closed:
+            if self._ws is not None:
                 with contextlib.suppress(Exception):
                     await self._ws.close()
             return
         if t in ("welcome", "confirm_subscription", "reject_subscription"):
-            # Handshake frames seen mid-session: unexpected but not fatal
             log.debug("[%s] late handshake frame: %s", self.label, t)
             return
-        # Channel message: look for identifier + message envelope
         if "message" in frame and frame.get("identifier") == self._identifier:
             payload = frame["message"]
             if not isinstance(payload, dict):
@@ -244,17 +245,15 @@ class JtvClient:
             event_name = payload.get("event_name") or payload.get("event") or ""
             data = payload.get("data")
             if data is None:
-                # Some deployments flatten the payload
                 data = {k: v for k, v in payload.items() if k not in ("event_name", "event")}
             try:
                 await self._on_event(event_name, data if isinstance(data, dict) else {"_raw": data})
             except Exception:
                 log.exception("[%s] on_event handler crashed for %s", self.label, event_name)
             return
-        # Anything else — don't silently drop, log at DEBUG
         log.debug("[%s] unhandled frame: %s", self.label, frame)
 
-    async def _sender_loop(self, ws: aiohttp.ClientWebSocketResponse) -> None:
+    async def _sender_loop(self, ws) -> None:
         """Pop outbound items and write them. Only starts after confirm_subscription."""
         while True:
             item = await self._out_queue.get()
@@ -264,10 +263,8 @@ class JtvClient:
                     "identifier": self._identifier,
                     "data": json.dumps(item),
                 }
-                await ws.send_json(frame)
+                await ws.send(json.dumps(frame))
             except Exception:
                 log.exception("[%s] failed to send frame, requeueing", self.label)
-                # Requeue at the front by putting back — order may drift
-                # marginally but we'd rather resend than drop.
                 await self._out_queue.put(item)
                 return

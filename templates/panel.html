@@ -42,6 +42,25 @@
       </ol>
       <p>For an on-stream overlay instead: <em>Sources → + → Browser</em>, same URL.</p>
 
+      <h2>Settings</h2>
+      <div class="settings-list">
+        <label class="toggle-row">
+          <span class="toggle-label">
+            <strong>Moderator use</strong>
+            <small>Allow mods to use <code>!nobot</code> commands and trigger the bot with their own "no" phrases</small>
+          </span>
+          <input type="checkbox" id="toggle-mods" role="switch" {% if mods_enabled %}checked{% endif %}>
+        </label>
+        <label class="toggle-row">
+          <span class="toggle-label">
+            <strong>Reset to ON when you go live</strong>
+            <small>Automatically re-enables chat triggers each time your stream starts</small>
+          </span>
+          <input type="checkbox" id="toggle-auto-reset" role="switch" {% if auto_reset_on_live %}checked{% endif %}>
+        </label>
+      </div>
+      <div id="settings-status" class="status"></div>
+
       <h2>Security</h2>
       <p>This URL is your authentication — anyone with it can press the button. If it leaks, rotate:</p>
       <button id="rotate-button" type="button" class="btn-secondary">Rotate URL (invalidate current link)</button>
@@ -52,6 +71,7 @@
   <script>
     const firePath = "{{ fire_path }}";
     const rotatePath = "{{ root_path }}/panel/{{ panel_slug }}/rotate";
+    const settingsPath = "{{ root_path }}/panel/{{ panel_slug }}/settings";
     const token = "{{ panel_token }}";
 
     const btn = document.getElementById("no-button");
@@ -87,6 +107,33 @@
         rotateStatus.textContent = "error: " + e.message;
       }
     });
+
+    const toggleMods = document.getElementById("toggle-mods");
+    const toggleAutoReset = document.getElementById("toggle-auto-reset");
+    const settingsStatus = document.getElementById("settings-status");
+    let settingsTimer;
+
+    async function saveSettings() {
+      clearTimeout(settingsTimer);
+      try {
+        const r = await fetch(settingsPath + "?k=" + encodeURIComponent(token), {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            mods_enabled: toggleMods.checked,
+            auto_reset_on_live: toggleAutoReset.checked,
+          }),
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        settingsStatus.textContent = "saved";
+      } catch (e) {
+        settingsStatus.textContent = "error: " + e.message;
+      }
+      settingsTimer = setTimeout(() => settingsStatus.textContent = "", 2000);
+    }
+
+    toggleMods.addEventListener("change", saveSettings);
+    toggleAutoReset.addEventListener("change", saveSettings);
   </script>
 </body>
 </html>
