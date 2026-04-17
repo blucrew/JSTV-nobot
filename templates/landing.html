@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>noBot for JoystickTV</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ root_path if root_path is defined else '' }}/static/panel.css">
+</head>
+<body class="landing">
+  <main>
+    <h1>noBot</h1>
+    <p class="tagline">For every "no" you say in your own chat, noBot finds a funnier one.</p>
+
+    <h2>What it does</h2>
+    <ul>
+      <li>Watches your chat for you or your mods saying "no" (or nope, nah, hell no, etc.).</li>
+      <li>When it hears a simple refusal, it drops a funnier variation into chat.</li>
+      <li>Gives you a private web panel with a big red <strong>No</strong> button you can press on demand — or add as an OBS dock.</li>
+      <li>Toggle off for a stream with <code>!nobot off</code>; resets to on when you go live again.</li>
+      <li><code>!nobothelp</code> whispers you the link to your panel.</li>
+    </ul>
+
+    <p style="margin-top:2rem">
+      <a class="btn-install" href="{{ install_url }}">Install noBot</a>
+    </p>
+    <p class="fineprint">You'll be sent to JoystickTV to authorize. After approving, you'll be redirected to your panel.</p>
+  </main>
+</body>
+</html>

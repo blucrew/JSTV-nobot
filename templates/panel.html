@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>noBot · {{ streamer_username }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="{{ root_path }}/static/panel.css">
+</head>
+<body class="panel">
+  <main>
+    {% if welcome %}
+    <div class="welcome">
+      <strong>Installed.</strong> Bookmark this page — the URL is your key, anyone with it can press the button. Use it as an OBS browser source for an on-stream button dock, or keep it open in a tab.
+    </div>
+    {% endif %}
+
+    <div class="button-stage">
+      <button id="no-button" type="button" aria-label="Fire a no">No</button>
+    </div>
+    <div id="status" class="status" aria-live="polite"></div>
+
+    <section class="instructions">
+      <h2>Chat commands</h2>
+      <p>Only you and your moderators can trigger these:</p>
+      <ul>
+        <li><code>!nobot on</code> — enable chat-triggered "no" responses (default when you go live)</li>
+        <li><code>!nobot off</code> — disable chat triggers for the rest of this stream</li>
+        <li><code>!nobothelp</code> — noBot whispers you the link to this panel</li>
+      </ul>
+      <p>When on, saying a simple "no" / "nope" / "nah" / "hell no" / etc. in your own chat drops a funnier version in after you.</p>
+
+      <h2>This button</h2>
+      <p>The big red button posts a random funny "no" as noBot. It always fires — it ignores the <code>!nobot on/off</code> toggle and has no cooldown. Press away.</p>
+
+      <h2>Add as an OBS dock</h2>
+      <ol>
+        <li>In OBS: <em>View → Docks → Custom Browser Docks…</em></li>
+        <li>Name: <code>noBot</code></li>
+        <li>URL: paste the address bar of this page (includes <code>?k=…</code>)</li>
+        <li>Click <em>Apply</em>, then drag the dock into your layout.</li>
+      </ol>
+      <p>For an on-stream overlay instead: <em>Sources → + → Browser</em>, same URL.</p>
+
+      <h2>Security</h2>
+      <p>This URL is your authentication — anyone with it can press the button. If it leaks, rotate:</p>
+      <button id="rotate-button" type="button" class="btn-secondary">Rotate URL (invalidate current link)</button>
+      <div id="rotate-status" class="status"></div>
+    </section>
+  </main>
+
+  <script>
+    const firePath = "{{ fire_path }}";
+    const rotatePath = "{{ root_path }}/panel/{{ panel_slug }}/rotate";
+    const token = "{{ panel_token }}";
+
+    const btn = document.getElementById("no-button");
+    const statusEl = document.getElementById("status");
+
+    btn.addEventListener("click", async () => {
+      btn.classList.add("pressed");
+      statusEl.textContent = "firing…";
+      try {
+        const r = await fetch(firePath + "?k=" + encodeURIComponent(token), {
+          method: "POST",
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        statusEl.textContent = "sent";
+      } catch (e) {
+        statusEl.textContent = "error: " + e.message;
+      }
+      setTimeout(() => btn.classList.remove("pressed"), 180);
+      setTimeout(() => statusEl.textContent = "", 2000);
+    });
+
+    const rotateBtn = document.getElementById("rotate-button");
+    const rotateStatus = document.getElementById("rotate-status");
+    rotateBtn.addEventListener("click", async () => {
+      if (!confirm("Rotate the panel URL? The current link will stop working. You'll be sent to the new one.")) return;
+      try {
+        const r = await fetch(rotatePath + "?k=" + encodeURIComponent(token), { method: "POST" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const data = await r.json();
+        rotateStatus.textContent = "Redirecting to new URL…";
+        window.location.href = data.panel_url;
+      } catch (e) {
+        rotateStatus.textContent = "error: " + e.message;
+      }
+    });
+  </script>
+</body>
+</html>
