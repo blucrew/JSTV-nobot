@@ -17,8 +17,7 @@ def _require(name: str) -> str:
 
 
 # Required
-JOYSTICK_APP_ID = _require("JOYSTICK_APP_ID")    # Application ID — used for WS auth
-JOYSTICK_BOT_ID = _require("JOYSTICK_BOT_ID")    # OAuth Client ID — used for token exchange
+JOYSTICK_BOT_ID = _require("JOYSTICK_BOT_ID")      # OAuth Client ID — token exchange + WS auth
 JOYSTICK_BOT_SECRET = _require("JOYSTICK_BOT_SECRET")
 BOT_USERNAME = _require("BOT_USERNAME").lower()
 PUBLIC_BASE_URL = _require("PUBLIC_BASE_URL").rstrip("/")

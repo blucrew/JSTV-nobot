@@ -21,10 +21,10 @@ import base64
 import websockets
 import websockets.exceptions
 
-from config import JOYSTICK_APP_ID, JOYSTICK_BOT_SECRET, JTV_WS_URL, RECONNECT_MIN, RECONNECT_MAX
+from config import JOYSTICK_BOT_ID, JOYSTICK_BOT_SECRET, JTV_WS_URL, RECONNECT_MIN, RECONNECT_MAX
 
-# WS auth uses Application ID (not OAuth Client ID) + shared secret, Basic Auth encoded.
-_WS_TOKEN = base64.b64encode(f"{JOYSTICK_APP_ID}:{JOYSTICK_BOT_SECRET}".encode()).decode()
+# WS auth: base64(CLIENT_ID:CLIENT_SECRET) — same credentials as OAuth token exchange.
+_WS_TOKEN = base64.b64encode(f"{JOYSTICK_BOT_ID}:{JOYSTICK_BOT_SECRET}".encode()).decode()
 
 # Explicit SSL context matching emojibuddy's proven approach.
 _SSL = ssl.create_default_context()
@@ -121,7 +121,7 @@ class JtvClient:
             async with websockets.connect(
                 url,
                 ssl=_SSL,
-                subprotocols=["actioncable-v1-json"],
+                subprotocols=["actioncable-v1-json", "actioncable-unsupported"],
                 open_timeout=20,
                 ping_interval=25,
                 ping_timeout=20,
