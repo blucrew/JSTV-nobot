@@ -88,7 +88,7 @@ async def callback(request: Request) -> RedirectResponse:
         )
 
     try:
-        me = _fetch_identity(token_data["access_token"])
+        me = await _fetch_identity(token_data["access_token"])
     except Exception as e:
         log.exception("identity fetch failed")
         return _render(
@@ -182,7 +182,7 @@ async def _exchange_code(code: str) -> dict:
             return await r.json(content_type=None)
 
 
-def _fetch_identity(access_token: str) -> dict:
+async def _fetch_identity(access_token: str) -> dict:
     """Decode the JWT payload locally — no API call, no extra permissions.
     JTV issues a signed JWT as the access_token; the payload contains the
     streamer's identity claims."""
