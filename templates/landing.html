@@ -2,28 +2,108 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>noBot for JoystickTV</title>
+  <title>noBot · JoystickTV</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="noBot watches your JoystickTV chat and responds whenever you say no — with a funnier one.">
   <link rel="stylesheet" href="{{ root_path if root_path is defined else '' }}/static/panel.css">
+  <style>
+    .hero { text-align: center; padding: 3rem 0 2rem; }
+    .hero h1 { font-size: 4rem; margin: 0; letter-spacing: -0.04em; }
+    .hero .tagline { font-size: 1.25rem; color: var(--muted); margin: 0.5rem 0 0; }
+    .how { display: grid; gap: 1.25rem; margin: 2.5rem 0; }
+    .step {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.1rem 1.25rem;
+    }
+    .step-label {
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #ff8a8a;
+      font-weight: 700;
+      margin: 0 0 0.35rem;
+    }
+    .step p { margin: 0; color: var(--ink); }
+    .cta { text-align: center; margin: 2.5rem 0 0.75rem; }
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2.5rem 0;
+    }
+    .commands { display: grid; gap: 0.6rem; }
+    .cmd { display: flex; align-items: baseline; gap: 0.75rem; }
+    .cmd code { flex-shrink: 0; min-width: 12rem; }
+    .cmd span { color: var(--muted); font-size: 0.92rem; }
+  </style>
 </head>
 <body class="landing">
   <main>
-    <h1>noBot</h1>
-    <p class="tagline">For every "no" you say in your own chat, noBot finds a funnier one.</p>
+    <div class="hero">
+      <h1>noBot</h1>
+      <p class="tagline">You say no. It says it better.</p>
+    </div>
 
-    <h2>What it does</h2>
-    <ul>
-      <li>Watches your chat for you or your mods saying "no" (or nope, nah, hell no, etc.).</li>
-      <li>When it hears a simple refusal, it drops a funnier variation into chat.</li>
-      <li>Gives you a private web panel with a big red <strong>No</strong> button you can press on demand — or add as an OBS dock.</li>
-      <li>Toggle off for a stream with <code>!nobot off</code>; resets to on when you go live again.</li>
-      <li><code>!nobothelp</code> whispers you the link to your panel.</li>
-    </ul>
-
-    <p style="margin-top:2rem">
-      <a class="btn-install" href="{{ install_url }}">Install noBot</a>
+    <h2>What is it?</h2>
+    <p>
+      noBot is a JoystickTV chat bot that listens for you — or your moderators — saying "no"
+      in your own chat. When it hears a plain refusal (nope, nah, hell no, absolutely not, etc.),
+      it immediately fires a funnier, more creative version of "no" into chat on your behalf.
+      Think of it as your chat's resident professional no-sayer.
     </p>
-    <p class="fineprint">You'll be sent to JoystickTV to authorize. After approving, you'll be redirected to your panel.</p>
+    <p>
+      It also gives you a private web panel with a big red <strong>No</strong> button. Press it
+      any time — live on stream, away from chat, as an OBS dock — and noBot drops a phrase into
+      chat as if it just felt like saying no all on its own.
+    </p>
+
+    <h2>How does it work?</h2>
+    <div class="how">
+      <div class="step">
+        <p class="step-label">Step 1 — Install</p>
+        <p>Click <em>Install noBot</em> below and authorize it through JoystickTV. Takes about 30 seconds. noBot immediately starts watching your chat.</p>
+      </div>
+      <div class="step">
+        <p class="step-label">Step 2 — Say no</p>
+        <p>You or a mod types something like <em>"no"</em>, <em>"nope"</em>, <em>"nah"</em>, <em>"absolutely not"</em>, or <em>"hell no"</em> in your chat. noBot responds with a randomly selected, funnier take on the same sentiment. It only triggers on short, standalone refusals — not when "no" appears naturally in longer sentences.</p>
+      </div>
+      <div class="step">
+        <p class="step-label">Step 3 — Or just press the button</p>
+        <p>You get a private panel page with a big red button labeled <strong>No</strong>. Press it whenever you want noBot to fire — regardless of chat. Add the page as an OBS browser source dock so the button sits inside your streaming setup.</p>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <h2>Chat commands</h2>
+    <p>Only you and your moderators can use these:</p>
+    <div class="commands">
+      <div class="cmd"><code>!nobot off</code> <span>Disable chat-triggered responses for the rest of this stream.</span></div>
+      <div class="cmd"><code>!nobot on</code> <span>Re-enable them mid-stream. noBot is on by default whenever you go live.</span></div>
+      <div class="cmd"><code>!nobothelp</code> <span>noBot whispers you the link to your private panel.</span></div>
+    </div>
+    <p style="margin-top:1rem; color:var(--muted); font-size:0.9rem">
+      The on/off toggle applies only to chat triggers. The button on your panel always works, regardless of toggle state.
+    </p>
+
+    <hr class="divider">
+
+    <h2>Privacy</h2>
+    <p>
+      noBot only reads chat messages from your channel and only acts on short, standalone "no"-type
+      phrases from you or your mods. It does not store message history, viewer data, or anything
+      beyond what is needed to keep your session running. Your panel is protected by a private URL —
+      only people you share it with can press the button.
+    </p>
+
+    <div class="cta">
+      <a class="btn-install" href="{{ install_url }}">Install noBot</a>
+      <p class="fineprint">
+        You'll be taken to JoystickTV to authorize. After approving, you'll land on your private panel
+        with setup instructions. Free to use.
+      </p>
+    </div>
   </main>
 </body>
 </html>
