@@ -88,7 +88,7 @@ async def callback(request: Request) -> RedirectResponse:
         )
 
     try:
-        me = await _fetch_identity(token_data["access_token"])
+        me = _fetch_identity(token_data["access_token"])
     except Exception as e:
         log.exception("identity fetch failed")
         return _render(
@@ -155,28 +155,39 @@ async def _exchange_code(code: str) -> dict:
             return await r.json(content_type=None)
 
 
-async def _fetch_identity(access_token: str) -> dict:
-    """JTV has no /me endpoint. /api/users/stream-settings returns the
-    authenticated streamer's username, channel_id, and other identity fields."""
-    url = f"{JTV_API_BASE}/users/stream-settings"
-    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
-    timeout = aiohttp.ClientTimeout(total=15)
-    async with aiohttp.ClientSession(timeout=timeout) as s:
-        async with s.get(url, headers=headers) as r:
-            body = await r.text()
-            if r.status != 200:
-                raise RuntimeError(f"{url}→{r.status}: {body[:200]}")
-            data = await r.json(content_type=None)
-    # Normalise to a common shape the caller expects.
-    # channel_id doubles as the unique user identifier when no separate id field exists.
-    user_id = (
-        str(data.get("id") or data.get("user_id") or data.get("channel_id") or "")
+def _fetch_identity(access_token: str) -> dict:
+    """Decode the JWT payload locally — no API call, no extra permissions.
+    JTV issues a signed JWT as the access_token; the payload contains the
+    streamer's identity claims."""
+    import base64, json as _json
+    parts = access_token.split(".")
+    if len(parts) != 3:
+        raise RuntimeError("access_token is not a JWT")
+    # base64url → bytes (add padding as needed)
+    padded = parts[1] + "=" * (4 - len(parts[1]) % 4)
+    try:
+        claims = _json.loads(base64.urlsafe_b64decode(padded))
+    except Exception as e:
+        raise RuntimeError(f"JWT payload decode failed: {e}")
+
+    log.debug("JWT claims: %s", claims)
+
+    user_id = str(
+        claims.get("sub")
+        or claims.get("id")
+        or claims.get("user_id")
+        or ""
     )
-    username = str(data.get("username") or data.get("name") or "").strip()
+    username = str(
+        claims.get("username")
+        or claims.get("name")
+        or claims.get("preferred_username")
+        or ""
+    ).strip()
+    channel_id = str(claims.get("channel_id") or claims.get("channel") or user_id)
+
     if not user_id or not username:
-        raise RuntimeError(f"stream-settings missing id/username: {data}")
-    return {
-        "id": user_id,
-        "username": username,
-        "channel_id": str(data.get("channel_id") or user_id),
-    }
+        raise RuntimeError(
+            f"JWT missing id/username — claims keys: {list(claims.keys())}"
+        )
+    return {"id": user_id, "username": username, "channel_id": channel_id}
