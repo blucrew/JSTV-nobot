@@ -18,7 +18,13 @@ from typing import Any, Awaitable, Callable, Optional
 
 import aiohttp
 
-from config import JTV_WS_URL, RECONNECT_MIN, RECONNECT_MAX
+import base64
+
+from config import JOYSTICK_BOT_ID, JOYSTICK_BOT_SECRET, JTV_WS_URL, RECONNECT_MIN, RECONNECT_MAX
+
+# WS auth is Basic Auth (bot credentials), NOT the per-streamer OAuth token.
+# Learned from emojibuddy: base64(bot_id:bot_secret) as the ?token= param.
+_WS_TOKEN = base64.b64encode(f"{JOYSTICK_BOT_ID}:{JOYSTICK_BOT_SECRET}".encode()).decode()
 
 log = logging.getLogger(__name__)
 
@@ -51,14 +57,10 @@ class JtvClient:
         *,
         label: str,
         channel_id: str,
-        get_access_token: Callable[[], Awaitable[str]],
-        refresh_access_token: Callable[[], Awaitable[None]],
         on_event: Callable[[str, dict], Awaitable[None]],
     ) -> None:
         self.label = label
         self._identifier = _make_identifier(channel_id)
-        self._get_access_token = get_access_token
-        self._refresh_access_token = refresh_access_token
         self._on_event = on_event
         self._out_queue: asyncio.Queue[dict] = asyncio.Queue()
         self._stopping = False
@@ -97,14 +99,6 @@ class JtvClient:
         while not self._stopping:
             try:
                 await self._connect_and_handle()
-                # Clean-ish disconnect → reset backoff
-                backoff = RECONNECT_MIN
-            except AuthError:
-                log.warning("[%s] auth rejected, refreshing token", self.label)
-                try:
-                    await self._refresh_access_token()
-                except Exception:
-                    log.exception("[%s] token refresh failed", self.label)
                 backoff = RECONNECT_MIN
             except asyncio.CancelledError:
                 raise
@@ -122,8 +116,7 @@ class JtvClient:
     # --- connection lifecycle -----------------------------------------------
 
     async def _connect_and_handle(self) -> None:
-        token = await self._get_access_token()
-        url = f"{JTV_WS_URL}?token={token}"
+        url = f"{JTV_WS_URL}?token={_WS_TOKEN}"
         self._subscribed.clear()
 
         timeout = aiohttp.ClientTimeout(total=None, sock_connect=20, sock_read=None)
@@ -132,9 +125,6 @@ class JtvClient:
             try:
                 ws = await session.ws_connect(url, heartbeat=25, max_msg_size=4 * 1024 * 1024)
             except aiohttp.WSServerHandshakeError as e:
-                # 401/403 during upgrade = bad token
-                if e.status in (401, 403):
-                    raise AuthError(f"handshake {e.status}") from e
                 raise
 
             self._ws = ws
