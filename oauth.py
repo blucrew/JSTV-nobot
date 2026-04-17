@@ -156,23 +156,27 @@ async def _exchange_code(code: str) -> dict:
 
 
 async def _fetch_identity(access_token: str) -> dict:
-    """Try conventional /me endpoints in order — JTV's exact route isn't
-    documented in the brief. First 200 wins."""
-    candidates = [
-        f"{JTV_API_BASE}/users/me",
-        f"{JTV_API_BASE}/me",
-        f"{JTV_API_BASE}/users/self",
-    ]
-    headers = {"Authorization": f"Bearer {access_token}"}
+    """JTV has no /me endpoint. /api/users/stream-settings returns the
+    authenticated streamer's username, channel_id, and other identity fields."""
+    url = f"{JTV_API_BASE}/users/stream-settings"
+    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     timeout = aiohttp.ClientTimeout(total=15)
-    last_err = ""
     async with aiohttp.ClientSession(timeout=timeout) as s:
-        for url in candidates:
-            try:
-                async with s.get(url, headers=headers) as r:
-                    if r.status == 200:
-                        return await r.json(content_type=None)
-                    last_err = f"{url}→{r.status}"
-            except Exception as e:
-                last_err = f"{url}→{e}"
-    raise RuntimeError(f"no /me endpoint responded (last: {last_err})")
+        async with s.get(url, headers=headers) as r:
+            body = await r.text()
+            if r.status != 200:
+                raise RuntimeError(f"{url}→{r.status}: {body[:200]}")
+            data = await r.json(content_type=None)
+    # Normalise to a common shape the caller expects.
+    # channel_id doubles as the unique user identifier when no separate id field exists.
+    user_id = (
+        str(data.get("id") or data.get("user_id") or data.get("channel_id") or "")
+    )
+    username = str(data.get("username") or data.get("name") or "").strip()
+    if not user_id or not username:
+        raise RuntimeError(f"stream-settings missing id/username: {data}")
+    return {
+        "id": user_id,
+        "username": username,
+        "channel_id": str(data.get("channel_id") or user_id),
+    }
