@@ -74,6 +74,7 @@ class StreamerSession:
         self.last_is_live: Optional[bool] = None
         self.client = JtvClient(
             label=streamer.jtv_username,
+            channel_id=streamer.channel_id or streamer.jtv_user_id,
             get_access_token=self._current_access_token,
             refresh_access_token=self._refresh_and_reload,
             on_event=self._on_event,

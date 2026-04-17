@@ -22,13 +22,16 @@ from config import JTV_WS_URL, RECONNECT_MIN, RECONNECT_MAX
 
 log = logging.getLogger(__name__)
 
-# ActionCable identifier for JTV's GatewayChannel. Must match exactly, including
-# JSON whitespace — ActionCable compares identifiers as strings on the server.
-_IDENTIFIER = '{"channel":"GatewayChannel"}'
-
-
 class AuthError(Exception):
     """Raised when the server signals that our token is invalid."""
+
+
+def _make_identifier(channel_id: str) -> str:
+    """Build the ActionCable subscription identifier string for a channel.
+    Must be compact JSON with no extra whitespace — ActionCable compares
+    identifiers as raw strings on the server side.
+    Learned from emojibuddy: channel_id must be included in the identifier."""
+    return json.dumps({"channel": "GatewayChannel", "id": str(channel_id)}, separators=(",", ":"))
 
 
 class JtvClient:
@@ -47,11 +50,13 @@ class JtvClient:
         self,
         *,
         label: str,
+        channel_id: str,
         get_access_token: Callable[[], Awaitable[str]],
         refresh_access_token: Callable[[], Awaitable[None]],
         on_event: Callable[[str, dict], Awaitable[None]],
     ) -> None:
         self.label = label
+        self._identifier = _make_identifier(channel_id)
         self._get_access_token = get_access_token
         self._refresh_access_token = refresh_access_token
         self._on_event = on_event
@@ -136,7 +141,7 @@ class JtvClient:
             try:
                 await self._await_welcome(ws)
                 await ws.send_json(
-                    {"command": "subscribe", "identifier": _IDENTIFIER}
+                    {"command": "subscribe", "identifier": self._identifier}
                 )
                 await self._await_confirm(ws)
 
@@ -242,7 +247,7 @@ class JtvClient:
             log.debug("[%s] late handshake frame: %s", self.label, t)
             return
         # Channel message: look for identifier + message envelope
-        if "message" in frame and frame.get("identifier") == _IDENTIFIER:
+        if "message" in frame and frame.get("identifier") == self._identifier:
             payload = frame["message"]
             if not isinstance(payload, dict):
                 return
@@ -266,7 +271,7 @@ class JtvClient:
             try:
                 frame = {
                     "command": "message",
-                    "identifier": _IDENTIFIER,
+                    "identifier": self._identifier,
                     "data": json.dumps(item),
                 }
                 await ws.send_json(frame)

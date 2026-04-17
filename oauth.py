@@ -133,6 +133,33 @@ def _parse_expiry(expires_in) -> int:
     return v if v > 1_000_000_000 else now + v
 
 
+async def _fetch_username(access_token: str, fallback: str) -> str:
+    """Best-effort username lookup — never raises, always returns something."""
+    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+    timeout = aiohttp.ClientTimeout(total=10)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as s:
+            async with s.get(f"{JTV_API_BASE}/users/me", headers=headers) as r:
+                if r.status == 200:
+                    d = await r.json(content_type=None)
+                    # Response may be nested under 'data' with a 'slug' field
+                    username = (
+                        (d.get("data") or {}).get("slug")
+                        or (d.get("data") or {}).get("username")
+                        or d.get("username")
+                        or d.get("slug")
+                        or d.get("name")
+                        or ""
+                    )
+                    if username:
+                        log.info("resolved username: %s", username)
+                        return str(username)
+                log.info("users/me returned %s — using channel_id as username", r.status)
+    except Exception as e:
+        log.info("users/me fetch failed (%s) — using channel_id as username", e)
+    return fallback
+
+
 async def _exchange_code(code: str) -> dict:
     # JTV token exchange: Basic Auth header, params as query string (not body).
     # ref: https://support.joystick.tv/developer_support/#fetching-access_token-api
@@ -170,24 +197,13 @@ def _fetch_identity(access_token: str) -> dict:
     except Exception as e:
         raise RuntimeError(f"JWT payload decode failed: {e}")
 
-    log.debug("JWT claims: %s", claims)
+    log.info("JWT claims: %s", claims)
 
-    user_id = str(
-        claims.get("sub")
-        or claims.get("id")
-        or claims.get("user_id")
-        or ""
-    )
-    username = str(
-        claims.get("username")
-        or claims.get("name")
-        or claims.get("preferred_username")
-        or ""
-    ).strip()
-    channel_id = str(claims.get("channel_id") or claims.get("channel") or user_id)
+    channel_id = str(claims.get("channel_id") or "")
+    if not channel_id:
+        raise RuntimeError(f"JWT missing channel_id — full claims: {claims}")
 
-    if not user_id or not username:
-        raise RuntimeError(
-            f"JWT missing id/username — claims keys: {list(claims.keys())}"
-        )
-    return {"id": user_id, "username": username, "channel_id": channel_id}
+    # Try to resolve the streamer's display username. Falls back to channel_id
+    # as a placeholder (same pattern as emojibuddy) — won't block install.
+    username = await _fetch_username(access_token, channel_id)
+    return {"id": channel_id, "username": username, "channel_id": channel_id}
