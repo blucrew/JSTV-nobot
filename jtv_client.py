@@ -36,11 +36,11 @@ class AuthError(Exception):
     """Raised when the server signals that our token is invalid."""
 
 
-def _make_identifier(channel_id: str) -> str:
-    """Build the ActionCable subscription identifier string for a channel.
-    Must be compact JSON with no extra whitespace — ActionCable compares
-    identifiers as raw strings on the server side."""
-    return json.dumps({"channel": "GatewayChannel", "id": str(channel_id)}, separators=(",", ":"))
+def _make_identifier() -> str:
+    """GatewayChannel identifier. JTV routes ALL streamer events to this
+    channel; the server does NOT use an id field to filter by streamer — the
+    OAuth token determines whose events arrive. BluBot confirmed: no id field."""
+    return json.dumps({"channel": "GatewayChannel"}, separators=(",", ":"))
 
 
 class JtvClient:
@@ -61,7 +61,8 @@ class JtvClient:
         on_event: Callable[[str, dict], Awaitable[None]],
     ) -> None:
         self.label = label
-        self._identifier = _make_identifier(channel_id)
+        self._channel_id = str(channel_id)
+        self._identifier = _make_identifier()
         self._on_event = on_event
         self._out_queue: asyncio.Queue[dict] = asyncio.Queue()
         self._stopping = False
@@ -72,15 +73,16 @@ class JtvClient:
 
     async def send_chat(self, text: str) -> None:
         await self._out_queue.put(
-            {"action": "chat", "message": text}
+            {"action": "send_message", "text": text, "channelId": self._channel_id}
         )
 
-    async def send_whisper(self, target_user_id: str, text: str) -> None:
+    async def send_whisper(self, target_slug: str, text: str) -> None:
         await self._out_queue.put(
             {
-                "action": "whisper",
-                "target_user_id": str(target_user_id),
-                "message": text,
+                "action": "send_whisper",
+                "username": target_slug,
+                "text": text,
+                "channelId": self._channel_id,
             }
         )
 
@@ -239,7 +241,7 @@ class JtvClient:
         if t in ("welcome", "confirm_subscription", "reject_subscription"):
             log.debug("[%s] late handshake frame: %s", self.label, t)
             return
-        if "message" in frame and frame.get("identifier") == self._identifier:
+        if "message" in frame:
             payload = frame["message"]
             log.debug("[%s] channel payload: %s", self.label, str(payload)[:400])
             if not isinstance(payload, dict):

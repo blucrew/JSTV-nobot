@@ -134,6 +134,14 @@ class StreamerSession:
 
     async def _on_chat(self, data: dict) -> None:
         # JTV payload: author info is under data["author"], text under data["text"].
+        # GatewayChannel delivers events for ALL channels the bot token has access to,
+        # so filter to only handle events for this session's streamer.
+        streamer_field = data.get("streamer")
+        if isinstance(streamer_field, dict):
+            event_streamer_slug = (streamer_field.get("slug") or "").lower()
+            if event_streamer_slug and event_streamer_slug != self.streamer.jtv_username.lower():
+                return
+
         author = data.get("author")
         if not isinstance(author, dict):
             author = {}
