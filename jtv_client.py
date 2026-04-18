@@ -241,7 +241,7 @@ class JtvClient:
             return
         if "message" in frame and frame.get("identifier") == self._identifier:
             payload = frame["message"]
-            log.info("[%s] channel payload: %s", self.label, str(payload)[:400])
+            log.info("[%s] channel payload: %s", self.label, str(payload)[:1500])
             if not isinstance(payload, dict):
                 return
             event_name = payload.get("event_name") or payload.get("event") or payload.get("type") or ""
