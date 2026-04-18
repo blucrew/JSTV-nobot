@@ -213,6 +213,15 @@ def update_tokens(
         )
 
 
+def update_username(streamer_id: int, username: str) -> None:
+    now = int(time.time())
+    with connect() as c:
+        c.execute(
+            "UPDATE streamers SET jtv_username=?, updated_at=? WHERE id=?",
+            (username, now, streamer_id),
+        )
+
+
 def update_settings(streamer_id: int, *, mods_enabled: bool, auto_reset_on_live: bool) -> None:
     now = int(time.time())
     with connect() as c:

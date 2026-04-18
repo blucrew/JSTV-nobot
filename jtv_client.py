@@ -241,7 +241,7 @@ class JtvClient:
             return
         if "message" in frame and frame.get("identifier") == self._identifier:
             payload = frame["message"]
-            log.info("[%s] channel payload: %s", self.label, str(payload)[:1500])
+            log.debug("[%s] channel payload: %s", self.label, str(payload)[:400])
             if not isinstance(payload, dict):
                 return
             event_name = payload.get("event_name") or payload.get("event") or payload.get("type") or ""
@@ -253,7 +253,7 @@ class JtvClient:
             except Exception:
                 log.exception("[%s] on_event handler crashed for %s", self.label, event_name)
             return
-        log.info("[%s] unhandled frame: %s", self.label, str(frame)[:400])
+        log.debug("[%s] unhandled frame: %s", self.label, str(frame)[:400])
 
     async def _sender_loop(self, ws) -> None:
         """Pop outbound items and write them. Only starts after confirm_subscription."""

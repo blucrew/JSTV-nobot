@@ -133,31 +133,35 @@ class StreamerSession:
                   self.streamer.jtv_username, event_name, data)
 
     async def _on_chat(self, data: dict) -> None:
-        sender = data.get("user") if isinstance(data.get("user"), dict) else data
-        username = (sender.get("username") or "").lower() if isinstance(sender, dict) else ""
-        text = (
-            data.get("message")
-            or data.get("body")
-            or data.get("text")
-            or ""
-        )
+        # JTV payload: author info is under data["author"], text under data["text"].
+        author = data.get("author")
+        if not isinstance(author, dict):
+            author = {}
+
+        slug = (author.get("slug") or author.get("username") or "").lower()
+        text = data.get("text") or data.get("message") or data.get("body") or ""
         if not isinstance(text, str) or not text.strip():
             return
 
-        # Self-filter: skip the bot's own messages (primary: username; fallback:
-        # zero-width marker we prefix on all our outbound).
-        if username and username == BOT_USERNAME:
+        # Self-filter
+        if slug and slug == BOT_USERNAME:
             return
         if text.startswith(BOT_REPLY_MARKER):
             return
 
-        if not self._is_privileged(data, sender):
+        # Opportunistically update stored username from first streamer message
+        if author.get("isStreamer") and slug and slug != self.streamer.jtv_username.lower():
+            db.update_username(self.streamer.id, slug)
+            fresh = db.get_streamer_by_id(self.streamer.id)
+            if fresh:
+                self.streamer = fresh
+
+        if not self._is_privileged(author):
             return
 
         stripped = text.strip()
         low = stripped.lower()
 
-        # Command routing (match before refusal detection)
         if low in ("!nobot on", "!nobot enable"):
             self.nobot_enabled = True
             await self.client.send_chat(
@@ -171,7 +175,7 @@ class StreamerSession:
             )
             return
         if low == "!nobothelp":
-            await self._send_help_whisper(sender if isinstance(sender, dict) else {})
+            await self._send_help_whisper(author)
             return
 
         if not self.nobot_enabled:
@@ -179,45 +183,31 @@ class StreamerSession:
         if is_simple_no(stripped):
             await self.fire_no()
 
-    def _is_privileged(self, data: dict, sender: dict) -> bool:
-        """Return True iff sender is the streamer or a moderator.
+    def _is_privileged(self, author: dict) -> bool:
+        """Return True iff the message author is the streamer or a moderator."""
+        if not isinstance(author, dict):
+            return False
 
-        Defensive: JTV payload shape isn't fully nailed down from the brief, so
-        we check several plausible fields and fall back to a direct match on
-        the streamer's own JTV user id / username.
-        """
-        if not isinstance(sender, dict):
-            sender = {}
-        user_id = str(sender.get("id") or "")
-        username = (sender.get("username") or "").lower()
+        # JTV provides explicit boolean flags — trust them first.
+        if author.get("isStreamer"):
+            return True
 
-        if user_id and user_id == str(self.streamer.jtv_user_id):
-            return True
-        if username and username == self.streamer.jtv_username.lower():
-            return True
-        if sender.get("is_streamer") or data.get("is_streamer"):
+        # Slug/username fallback for streamer match
+        slug = (author.get("slug") or author.get("username") or "").lower()
+        if slug and slug == self.streamer.jtv_username.lower():
             return True
 
         # Moderator checks — only if the streamer has mods enabled
         if not self.streamer.mods_enabled:
             return False
 
-        if sender.get("is_moderator") or data.get("is_moderator"):
+        if author.get("isModerator"):
             return True
 
-        roles = sender.get("roles") or data.get("roles")
-        if isinstance(roles, list):
-            for r in roles:
-                if str(r).lower() in ("moderator", "mod"):
-                    return True
-
-        role = str(sender.get("role") or data.get("role") or "").lower()
-        if role in ("moderator", "mod"):
-            return True
         return False
 
-    async def _send_help_whisper(self, sender: dict) -> None:
-        target_id = str(sender.get("id") or "")
+    async def _send_help_whisper(self, author: dict) -> None:
+        slug = str(author.get("slug") or author.get("username") or "")
         url = self._panel_url()
         msg = (
             f"noBot commands: '!nobot on' / '!nobot off' toggle the chat "
@@ -225,11 +215,11 @@ class StreamerSession:
             f"Your private trigger panel: {url} — bookmark it or add as an "
             f"OBS browser source dock."
         )
-        if target_id:
-            await self.client.send_whisper(target_id, BOT_REPLY_MARKER + msg)
+        if slug:
+            await self.client.send_whisper(slug, BOT_REPLY_MARKER + msg)
         else:
             log.warning(
-                "[%s] !nobothelp invoked without sender id — skipping",
+                "[%s] !nobothelp invoked without author slug — skipping",
                 self.streamer.jtv_username,
             )
 
