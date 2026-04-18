@@ -49,8 +49,8 @@ OAUTH_REDIRECT_URI = f"{PUBLIC_BASE_URL}{ROOT_PATH}/auth/callback"
 def panel_url(slug: str, token: str) -> str:
     return f"{PUBLIC_BASE_URL}{ROOT_PATH}/panel/{slug}?k={token}"
 
-# OAuth scopes we need — adjust once confirmed against JTV docs
-OAUTH_SCOPES = "read write"
+# "bot" scope is required for JTV to route chat events to the WS subscription.
+OAUTH_SCOPES = "bot channel:read"
 
 # Zero-width space prefix on bot replies. If we ever read our own message back,
 # the detector skips anything starting with this even if sender-name matching fails.
