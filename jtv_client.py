@@ -243,7 +243,7 @@ class JtvClient:
             payload = frame["message"]
             if not isinstance(payload, dict):
                 return
-            event_name = payload.get("event_name") or payload.get("event") or ""
+            event_name = payload.get("event_name") or payload.get("event") or payload.get("type") or ""
             data = payload.get("data")
             if data is None:
                 data = {k: v for k, v in payload.items() if k not in ("event_name", "event")}
