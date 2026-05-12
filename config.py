@@ -36,9 +36,9 @@ ROOT_PATH = os.environ.get("ROOT_PATH", "").rstrip("/")
 
 # JTV endpoints (per developer docs)
 JTV_AUTHORIZE_URL = "https://joystick.tv/api/oauth/authorize"
-JTV_TOKEN_URL = "https://joystick.tv/api/oauth/token"
-JTV_WS_URL = "wss://joystick.tv/cable"
-JTV_API_BASE = "https://joystick.tv/api"
+JTV_TOKEN_URL = "https://api.joystick.tv/api/oauth/token"
+JTV_WS_URL = "wss://api.joystick.tv/cable"
+JTV_API_BASE = "https://api.joystick.tv/api"
 JTV_STREAM_SETTINGS_URL = f"{JTV_API_BASE}/users/stream-settings"
 
 # Derived — both the redirect and panel URLs include ROOT_PATH so they work
